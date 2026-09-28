@@ -79,16 +79,14 @@ jobs:
       matrix:
         target: *build-matrix
         package:
-          - name: chip-host-tools_1_4_0_0
-            version: 1.4.0.0
-          - name: chip-host-tools_1_4_2_0
-            version: 1.4.2.0
           - name: chip-host-tools_1_5_0_1
             version: 1.5.0.1
           - name: chip-host-tools_1_5_1_0
             version: 1.5.1.0
           - name: chip-host-tools_1_6_0_0
             version: 1.6.0.0
+          - name: chip-host-tools_1_6_1_0
+            version: 1.6.1.0
 
     steps:
       - name: Checkout
