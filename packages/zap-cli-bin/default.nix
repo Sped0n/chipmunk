@@ -11,20 +11,16 @@ let
 
   sources = {
     x86_64-linux = {
-      url = "https://github.com/project-chip/zap/releases/download/v2026.05.21/zap-linux-x64.zip";
-      hash = "sha256-QbOLOHpl/0WUY8HsAhfzdqdTT+0HSn3TG9j6uuAKQpM=";
+      url = "https://github.com/project-chip/zap/releases/download/v2026.10.06/zap-linux-x64.zip";
+      hash = "sha256-8onV9jQy4j89YzESdIOaTzTHhCqP8lXlT3QI1tFM0ks=";
     };
     aarch64-linux = {
-      url = "https://github.com/project-chip/zap/releases/download/v2026.05.21/zap-linux-arm64.zip";
-      hash = "sha256-A13MtQXaSLgc3WLXJKS9RDVRkHnm4FZydDcLsZE1JH4=";
-    };
-    x86_64-darwin = {
-      url = "https://github.com/project-chip/zap/releases/download/v2026.05.21/zap-mac-x64.zip";
-      hash = "sha256-LYY5peXBMxCRLwKsjDDn4An54Jrb6ZKmkyKWGBZt1po=";
+      url = "https://github.com/project-chip/zap/releases/download/v2026.10.06/zap-linux-arm64.zip";
+      hash = "sha256-k1WUryDlXTcr22DYUWdu5sZlqi3+//9GGaP9n2g5CAc=";
     };
     aarch64-darwin = {
-      url = "https://github.com/project-chip/zap/releases/download/v2026.05.21/zap-mac-arm64.zip";
-      hash = "sha256-h3ehPggZ0KaHoXYCw1+g4zahwLlQef0Z6kaKNu7X91I=";
+      url = "https://github.com/project-chip/zap/releases/download/v2026.10.06/zap-mac-arm64.zip";
+      hash = "sha256-7RI+UDRB+Mn9OYK4jtQ0vV6x440O+kfQpI857S2MAHA=";
     };
   };
 
@@ -36,7 +32,7 @@ let
 in
 stdenvNoCC.mkDerivation {
   pname = "zap-cli-bin";
-  version = "2026.05.21";
+  version = "2026.10.06";
 
   src = fetchzip {
     inherit (source) url hash;
@@ -60,6 +56,11 @@ stdenvNoCC.mkDerivation {
       install -d "$out/bin"
 
       asar extract ./resources/app.asar "$out/libexec/zap-cli-app"
+
+      # The CLI runs under Node, where Electron's API module is unavailable.
+      substituteInPlace "$out/libexec/zap-cli-app/dist/src-electron/util/env.js" \
+        --replace-fail "const electron = require('electron');" \
+          "const electron = process.versions.electron ? require('electron') : undefined;"
 
       makeWrapper ${lib.getExe nodejs_24} "$out/bin/zap-cli" \
         --argv0 zap-cli \
@@ -91,6 +92,6 @@ stdenvNoCC.mkDerivation {
     homepage = "https://github.com/project-chip/zap";
     license = licenses.asl20;
     mainProgram = "zap-cli";
-    platforms = platforms.unix;
+    platforms = builtins.attrNames sources;
   };
 }

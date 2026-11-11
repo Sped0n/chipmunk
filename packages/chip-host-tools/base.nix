@@ -58,7 +58,7 @@ let
     ''target_ar="${stdenv.cc.bintools}/bin/ar"''
     ''target_cpu="${gnTargetCpu}"''
   ]
-  ++ lib.optionals stdenv.isDarwin [ ''mac_deployment_target="darwin"'' ];
+  ++ lib.optionals stdenv.hostPlatform.isDarwin [ ''mac_deployment_target="darwin"'' ];
 
   submoduleSources =
     map (
@@ -94,7 +94,7 @@ stdenv.mkDerivation {
 
   strictDeps = true;
   enableParallelBuilding = true;
-  hardeningDisable = lib.optionals stdenv.isDarwin [ "stackclashprotection" ];
+  hardeningDisable = lib.optionals stdenv.hostPlatform.isDarwin [ "stackclashprotection" ];
 
   nativeBuildInputs = [
     ccache
@@ -112,7 +112,7 @@ stdenv.mkDerivation {
     openssl
     readline
   ]
-  ++ lib.optionals stdenv.isLinux [
+  ++ lib.optionals stdenv.hostPlatform.isLinux [
     avahi
     dbus
   ];
@@ -122,7 +122,7 @@ stdenv.mkDerivation {
   postPatch = ''
     ${linkSubmodules}
 
-    ${lib.optionalString stdenv.isDarwin ''
+    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
       python -c '
       from pathlib import Path
 
