@@ -2,6 +2,7 @@
   lib,
   stdenv,
   fetchgit,
+  applyPatches,
   zapCliBin,
   gn,
   ninja,
@@ -63,9 +64,25 @@ let
   submoduleSources =
     map (
       { path, ... }@source:
+      let
+        src = fetchgit (removeAttrs source [ "path" ]);
+      in
       {
         inherit path;
-        src = fetchgit (removeAttrs source [ "path" ]);
+        src =
+          if path == "third_party/libwebsockets/repo" && lib.versionOlder version "1.6" then
+            applyPatches {
+              inherit src;
+              name = "libwebsockets-const-correct";
+              postPatch = ''
+                # strchr preserves const with newer toolchains; the username buffer stays mutable.
+                substituteInPlace lib/plat/unix/unix-caps.c \
+                  --replace-fail "char *colon =" "const char *colon =" \
+                  --replace-fail ", u[33];" $';\n\tchar u[33];'
+              '';
+            }
+          else
+            src;
       }
     ) fetchedSubmoduleSources
     ++ [
