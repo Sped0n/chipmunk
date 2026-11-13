@@ -53,6 +53,8 @@ jobs:
             connect-timeout = 5
             http-connections = 64
             max-substitution-jobs = 64
+            extra-substituters = https://nix-cache.sped0n.com/nix-cache?priority=30
+            extra-trusted-public-keys = nix-cache.sped0n.com-1:2QjPOhbTs8xHYPpe0tuGIQQ+DFmEZMv05UAfHzU9Crg=
 
       - name: Run prek checks
         run: |
@@ -201,6 +203,9 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+            fallback = true
+            extra-substituters = https://nix-cache.sped0n.com/nix-cache?priority=30
+            extra-trusted-public-keys = nix-cache.sped0n.com-1:2QjPOhbTs8xHYPpe0tuGIQQ+DFmEZMv05UAfHzU9Crg=
             extra-sandbox-paths = /nix/var/cache/ccache
 
       - name: Restore Nix cache
