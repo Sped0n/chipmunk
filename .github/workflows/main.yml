@@ -277,24 +277,6 @@ jobs:
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
-  prune-caches:
-    needs: [host-tools, image]
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          persist-credentials: false
-
-      - name: Prune superseded caches
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash .github/workflows/prune-caches.sh
-
   publish-image:
     needs: image
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'

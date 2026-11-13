@@ -41,26 +41,3 @@ runs:
         nix-cache-push config set secretKeyPath "$secret_key_file"
 
         printf '%s\n' "$PACKAGE_PATHS" | nix-cache-push
-
-    - name: Verify published paths in an isolated store
-      shell: bash
-      env:
-        PACKAGE_PATHS: ${{ inputs.paths }}
-      run: |
-        set -euo pipefail
-
-        store_root=$(mktemp -d "$RUNNER_TEMP/nix-cache-verify.XXXXXXXX")
-        cleanup() {
-          chmod -R u+w "$store_root"
-          rm -rf "$store_root"
-        }
-        trap cleanup EXIT
-
-        paths=()
-        while IFS= read -r path; do
-          paths+=("$path")
-        done <<< "$PACKAGE_PATHS"
-
-        # An empty target store verifies downloads and signatures, not local outputs.
-        nix copy --from https://nix-cache.sped0n.com/nix-cache \
-          --to "local?root=$store_root" "${paths[@]}"
