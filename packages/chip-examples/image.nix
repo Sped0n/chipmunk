@@ -3,12 +3,10 @@
   chipExamples,
   chipVersion,
   chipRevision,
-  revision,
-  shortRevision,
 }:
 dockerTools.buildLayeredImage {
   name = "ghcr.io/sped0n/chipmunk";
-  tag = "${chipVersion}-${shortRevision}";
+  tag = chipVersion;
   contents = [
     chipExamples
     dockerTools.fakeNss
@@ -31,8 +29,7 @@ dockerTools.buildLayeredImage {
       "org.opencontainers.image.title" = "chipmunk";
       "org.opencontainers.image.description" = "Upstream Matter Linux example apps";
       "org.opencontainers.image.source" = "https://github.com/Sped0n/chipmunk";
-      "org.opencontainers.image.revision" = revision;
-      "org.opencontainers.image.version" = "${chipVersion}-${shortRevision}";
+      "org.opencontainers.image.version" = chipVersion;
       "org.opencontainers.image.licenses" = "Apache-2.0";
       "io.chipmunk.chip.version" = chipVersion;
       "io.chipmunk.chip.revision" = chipRevision;

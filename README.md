@@ -117,9 +117,10 @@ docker run --rm --network host -v matter-devices:/tmp \
 ### Image tags
 
 - `latest` selects the latest published image.
-- `<CHIP-version>-<12-character-chipmunk-commit>` selects a specific build.
+- `<CHIP-version>-<12-character-content-hash>` selects specific image contents.
 
-Both tags support AMD64 and ARM64. Use a registry digest to pin an exact image.
+Both tags support AMD64 and ARM64. The content hash comes from the multi-platform
+index digest. Use the full registry digest to pin an exact image.
 
 ### Build the image locally
 
@@ -135,4 +136,4 @@ tag=$(nix eval --raw .#docker-image.imageTag)
 docker run --rm "ghcr.io/sped0n/chipmunk:$tag" chip-lighting-app --help
 ```
 
-A dirty checkout uses the `-dirty` tag suffix.
+Locally built images use the CHIP version as their tag.

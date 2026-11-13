@@ -4,7 +4,7 @@
   inputs.nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
 
   outputs =
-    { self, nixpkgs, ... }:
+    { nixpkgs, ... }:
     let
       # Newest first: the first version drives both default host tools and the image.
       chipVersions = [
@@ -100,8 +100,6 @@
                   inherit chipExamples;
                   chipVersion = defaultChipVersion;
                   chipRevision = defaultSdk.src.rev;
-                  revision = self.rev or (self.dirtyRev or "unknown");
-                  shortRevision = if self ? rev then builtins.substring 0 12 self.rev else "dirty";
                 };
               }
             );
@@ -109,20 +107,15 @@
         {
           inherit packages;
 
-          devShells = builtins.mapAttrs (
-            _: package:
-            pkgs.mkShell {
-              packages = [
-                package
-              ]
-              ++ (with pkgs; [
-                prek
+          devShells.default = pkgs.mkShellNoCC {
+            packages = with pkgs; [
+              prek
 
-                actionlint
-                nixfmt
-              ]);
-            }
-          ) (removeAttrs packages [ "docker-image" ]);
+              actionlint
+              crane
+              nixfmt
+            ];
+          };
         }
       );
     in

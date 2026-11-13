@@ -58,8 +58,7 @@ jobs:
 
       - name: Run prek checks
         run: |
-          nix shell --inputs-from . nixpkgs#prek nixpkgs#nixfmt nixpkgs#actionlint \
-            -c prek run --all-files
+          nix develop --command prek run --all-files
 
       - name: Read version matrix
         id: matrix
@@ -255,10 +254,10 @@ jobs:
       - name: Prepare checked image artifact
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
         env:
-          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          CHIP_VERSION: ${{ steps.image.outputs.tag }}
         run: |
           cp -L image image.tar.gz
-          printf '%s\n' "$IMAGE_TAG" > tag.txt
+          printf '%s\n' "$CHIP_VERSION" > version.txt
 
       - name: Upload checked image
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
@@ -267,7 +266,7 @@ jobs:
           name: image-${{ matrix.arch }}
           path: |
             image.tar.gz
-            tag.txt
+            version.txt
           compression-level: 0
           retention-days: 1
 
@@ -311,5 +310,5 @@ jobs:
 
       - name: Publish checked images and multi-platform tags
         run: |
-          nix shell --inputs-from . nixpkgs#crane -c bash .github/workflows/publish-image.sh \
+          nix develop --command bash .github/workflows/publish-image.sh \
             ghcr.io/sped0n/chipmunk images
