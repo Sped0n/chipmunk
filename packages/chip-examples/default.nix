@@ -2,14 +2,15 @@
   lib,
   buildChip,
   sdk,
-  app,
+  appName,
+  appPath,
 }:
 buildChip {
   inherit sdk;
-  pname = app.binary;
-  gnRoot = app.path;
+  pname = appName;
+  gnRoot = appPath;
   chipRoot = "third_party/connectedhomeip/";
-  targets = [ app.binary ];
+  targets = [ appName ];
   additionalSubmodules = [ "miniaudio" ];
   extraGnArgs = [
     ''chip_mdns="minimal"''
@@ -20,17 +21,17 @@ buildChip {
   ];
 
   installCommands = ''
-    install -Dm755 out/host/${app.binary} "$out/bin/${app.binary}"
+    install -Dm755 out/host/${appName} "$out/bin/${appName}"
   '';
 
   checkCommands = ''
-    "$out/bin/${app.binary}" --help > "$TMPDIR/help.txt" 2>&1
+    "$out/bin/${appName}" --help > "$TMPDIR/help.txt" 2>&1
     grep -q -- '--discriminator' "$TMPDIR/help.txt"
   '';
 
   meta = {
-    description = "Matter ${app.binary} Linux example";
-    mainProgram = app.binary;
+    description = "Matter ${appName} Linux example";
+    mainProgram = appName;
     platforms = lib.platforms.linux;
   };
 }

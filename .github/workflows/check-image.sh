@@ -37,7 +37,7 @@ wait_for_start() {
 }
 
 apps=$(nix eval --json --file packages/chip-examples/apps.nix \
-  --apply 'apps: builtins.map (app: app.binary) (builtins.attrValues apps)')
+  --apply builtins.attrNames)
 mapfile -t binaries < <(jq -r '.[]' <<< "$apps")
 printf '%s\n' '{"deviceSoftwareVersionModel":[]}' > "$work/ota-images.json"
 chmod 644 "$work/ota-images.json"

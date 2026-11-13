@@ -72,9 +72,9 @@
 
           exampleDefinitions = import ./packages/chip-examples/apps.nix;
           examplePackages = pkgs.lib.mapAttrs (
-            _: app:
+            appName: appPath:
             pkgs.callPackage ./packages/chip-examples {
-              inherit buildChip app;
+              inherit buildChip appName appPath;
               sdk = defaultSdk;
             }
           ) exampleDefinitions;

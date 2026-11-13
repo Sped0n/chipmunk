@@ -11,7 +11,7 @@ The default CHIP version is `1.6.1.0`. Host tools support `x86_64-linux`,
 nix run github:Sped0n/chipmunk#chip-host-tools -- --help
 nix shell github:Sped0n/chipmunk#chip-host-tools -c chip-cert help
 nix run github:Sped0n/chipmunk#zap-cli-bin -- --version
-nix run github:Sped0n/chipmunk#lighting-app -- --help
+nix run github:Sped0n/chipmunk#chip-lighting-app -- --help
 nix shell github:Sped0n/chipmunk#chip-examples
 ```
 
@@ -52,17 +52,17 @@ nix-cache.sped0n.com-1:2QjPOhbTs8xHYPpe0tuGIQQ+DFmEZMv05UAfHzU9Crg=
 the host architecture automatically. Each container runs one executable and
 accepts its upstream arguments. The default executable is `all-devices-app`.
 
-| Nix package         | Executable               |
-| ------------------- | ------------------------ |
-| `all-devices-app`   | `all-devices-app`        |
-| `all-clusters-app`  | `chip-all-clusters-app`  |
-| `rvc-app`           | `chip-rvc-app`           |
-| `lighting-app`      | `chip-lighting-app`      |
-| `lock-app`          | `chip-lock-app`          |
-| `thermostat`        | `thermostat-app`         |
-| `bridge-app`        | `chip-bridge-app`        |
-| `ota-provider-app`  | `chip-ota-provider-app`  |
-| `ota-requestor-app` | `chip-ota-requestor-app` |
+These names work as both Nix package names and Docker commands:
+
+- `all-devices-app`
+- `chip-all-clusters-app`
+- `chip-rvc-app`
+- `chip-lighting-app`
+- `chip-lock-app`
+- `thermostat-app`
+- `chip-bridge-app`
+- `chip-ota-provider-app`
+- `chip-ota-requestor-app`
 
 The image has no shell. Get `chip-tool`, `chip-cert`, and ZAP from the Nix
 packages.
