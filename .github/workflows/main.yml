@@ -5,8 +5,7 @@ on:
     paths:
       - "**/*.nix"
       - "flake.lock"
-      - ".github/workflows/check-image.sh"
-      - ".github/workflows/publish-image.sh"
+      - ".github/workflows/*.sh"
       - ".github/workflows/main.yml"
       - ".github/actions/**"
       - ".pre-commit-config.yaml"
@@ -14,8 +13,7 @@ on:
     paths:
       - "**/*.nix"
       - "flake.lock"
-      - ".github/workflows/check-image.sh"
-      - ".github/workflows/publish-image.sh"
+      - ".github/workflows/*.sh"
       - ".github/workflows/main.yml"
       - ".github/actions/**"
       - ".pre-commit-config.yaml"
@@ -85,6 +83,8 @@ jobs:
         target:
           - runner: ubuntu-latest
             system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
           - runner: macos-latest
             system: aarch64-darwin
         package: ${{ fromJSON(needs.prepare.outputs.packages) }}
@@ -110,15 +110,6 @@ jobs:
           restore-keys: |
             ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-
             ccache-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Restore caches
-        id: nix-cache-restore
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
-        with:
-          primary-key: nix-store-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-${{ hashFiles(format('packages/chip-sdk/versions/{0}.nix', matrix.package.version), 'packages/chip-sdk/build.nix', 'packages/chip-host-tools/default.nix', 'packages/zap-cli-bin/**/*.nix', 'flake.nix', 'flake.lock') }}
-          restore-prefixes-first-match: |
-            nix-store-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-
-            nix-store-build-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install build tools
         run: nix profile add --inputs-from . nixpkgs#ccache
@@ -159,28 +150,11 @@ jobs:
           sudo --preserve-env=CCACHE_DIR "$(command -v ccache)" -svv
 
       - name: Save ccache
-        if: ${{ always() && steps.ccache-restore.outputs.cache-hit != 'true' }}
+        if: success() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request' && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: ./.github/actions/save-ccache
         with:
           directory: ${{ env.CCACHE_DIR }}
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
-
-      - name: Remove ccache before Nix cache save
-        if: ${{ always() && steps.nix-cache-restore.outputs.hit-primary-key != 'true' }}
-        run: sudo rm -rf "$CCACHE_DIR"
-
-      - name: Save caches
-        if: ${{ always() && steps.nix-cache-restore.outputs.hit-primary-key != 'true' }}
-        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
-        with:
-          primary-key: ${{ steps.nix-cache-restore.outputs.primary-key }}
-          gc-max-store-size-linux: 4G
-          gc-max-store-size-macos: 4G
-          purge: true
-          purge-prefixes: nix-store-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-
-          purge-created: 0
-          purge-last-accessed: P1DT12H
-          purge-primary-key: never
 
   image:
     needs: prepare
@@ -192,8 +166,10 @@ jobs:
         include:
           - runner: ubuntu-24.04
             arch: amd64
+            system: x86_64-linux
           - runner: ubuntu-24.04-arm
             arch: arm64
+            system: aarch64-linux
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -210,17 +186,11 @@ jobs:
             extra-trusted-public-keys = nix-cache.sped0n.com-1:2QjPOhbTs8xHYPpe0tuGIQQ+DFmEZMv05UAfHzU9Crg=
             extra-sandbox-paths = /nix/var/cache/ccache
 
-      - name: Restore Nix cache
-        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
-        with:
-          primary-key: nix-image-${{ runner.arch }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-image-${{ runner.arch }}-
-
       - name: Restore compiler cache
         id: ccache-restore
         uses: ./.github/actions/restore-ccache
         with:
-          max-size: 2G
+          max-size: 1G
           key: ccache-image-${{ runner.arch }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
           restore-keys: ccache-image-${{ runner.arch }}-
 
@@ -257,24 +227,24 @@ jobs:
           test "$(docker image inspect "$IMAGE" --format '{{.Architecture}}')" = "$EXPECTED_ARCH"
           export CHIP_TOOL="$PWD/host-tools/bin/chip-tool"
           export CHIP_SOURCE
-          CHIP_SOURCE=$(nix eval --raw .#chip-host-tools.src.outPath)
+          CHIP_SOURCE=$(nix build --no-link --print-out-paths .#chip-host-tools.src)
           bash .github/workflows/check-image.sh "$IMAGE"
 
       - name: Collect example cache paths
         id: example-cache
-        if: matrix.arch == 'amd64' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
         run: |
           package_names=$(nix eval --json --file packages/chip-examples/apps.nix \
             --apply 'apps: builtins.attrNames apps ++ [ "chip-examples" ]' | jq -r '.[]')
           installables=()
           while IFS= read -r package; do
-            installables+=(".#packages.x86_64-linux.$package")
+            installables+=(".#packages.${{ matrix.system }}.$package")
           done <<< "$package_names"
           paths=$(nix build --no-link --print-out-paths "${installables[@]}" | sort -u)
           printf 'paths<<EOF\n%s\nEOF\n' "$paths" >> "$GITHUB_OUTPUT"
 
       - name: Publish examples to Nix cache
-        if: matrix.arch == 'amd64' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
         uses: ./.github/actions/push-nix-cache
         with:
           paths: ${{ steps.example-cache.outputs.paths }}
@@ -302,22 +272,28 @@ jobs:
           retention-days: 1
 
       - name: Save compiler cache
-        if: success() && steps.ccache-restore.outputs.cache-hit != 'true'
+        if: success() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request' && steps.ccache-restore.outputs.cache-hit != 'true'
         uses: ./.github/actions/save-ccache
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
-      - name: Save Nix cache
-        if: always()
-        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+  prune-caches:
+    needs: [host-tools, image]
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          primary-key: nix-image-${{ runner.arch }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
-          gc-max-store-size-linux: 6G
-          purge: true
-          purge-prefixes: nix-image-${{ runner.arch }}-
-          purge-created: 0
-          purge-last-accessed: P1DT12H
-          purge-primary-key: never
+          persist-credentials: false
+
+      - name: Prune superseded caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/workflows/prune-caches.sh
 
   publish-image:
     needs: image
