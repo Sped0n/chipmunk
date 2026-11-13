@@ -5,7 +5,18 @@ on:
     paths:
       - "**/*.nix"
       - "flake.lock"
+      - ".github/workflows/check-image.sh"
       - ".github/workflows/main.yml"
+      - ".github/actions/**"
+      - ".pre-commit-config.yaml"
+  pull_request:
+    paths:
+      - "**/*.nix"
+      - "flake.lock"
+      - ".github/workflows/check-image.sh"
+      - ".github/workflows/main.yml"
+      - ".github/actions/**"
+      - ".pre-commit-config.yaml"
   workflow_dispatch:
 
 concurrency:
@@ -15,25 +26,24 @@ concurrency:
 permissions:
   contents: read
 
-jobs:
-  flake-check:
-    name: check (${{ matrix.system }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: &build-matrix
-          - runner: ubuntu-latest
-            system: x86_64-linux
-          - runner: macos-latest
-            system: aarch64-darwin
+defaults:
+  run:
+    shell: bash
 
+jobs:
+  prepare:
+    name: Check flake and prepare matrix
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.matrix.outputs.packages }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
-        uses: cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
         with:
           extra_nix_config: &nix-extra-conf |
             experimental-features = nix-command flakes
@@ -44,32 +54,23 @@ jobs:
             http-connections = 64
             max-substitution-jobs = 64
 
-      - name: Restore caches
-        id: nix-cache-restore
-        uses: nix-community/cache-nix-action/restore@v7
-        with:
-          primary-key: nix-store-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
-          restore-prefixes-first-match: nix-store-check-${{ runner.os }}-${{ runner.arch }}-
+      - name: Run prek checks
+        run: |
+          nix shell --inputs-from . nixpkgs#prek nixpkgs#nixfmt nixpkgs#actionlint \
+            -c prek run --all-files
 
-      - name: Run flake check
-        run: nix flake check -L --keep-going
+      - name: Read version matrix
+        id: matrix
+        run: |
+          packages=$(nix eval --json .#lib.chipVersions | jq -c 'map({name: ("chip-host-tools_" + gsub("\\."; "_")), version: .})')
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
-      - name: Save caches
-        if: ${{ always() && steps.nix-cache-restore.outputs.hit-primary-key != 'true' }}
-        uses: nix-community/cache-nix-action/save@v7
-        with:
-          primary-key: ${{ steps.nix-cache-restore.outputs.primary-key }}
-          gc-max-store-size-linux: 500M
-          gc-max-store-size-macos: 500M
-          purge: true
-          purge-prefixes: nix-store-check-${{ runner.os }}-${{ runner.arch }}-
-          purge-created: 0
-          purge-last-accessed: P1DT12H
-          purge-primary-key: never
+      - name: Check flake
+        run: nix flake check --no-build --all-systems
 
-  build:
+  host-tools:
     name: build ${{ matrix.package.name }} (${{ matrix.target.system }})
-    needs: flake-check
+    needs: prepare
     runs-on: ${{ matrix.target.runner }}
     env:
       CCACHE_DIR: /nix/var/cache/ccache
@@ -77,58 +78,40 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: *build-matrix
-        package:
-          - name: chip-host-tools_1_5_0_1
-            version: 1.5.0.1
-          - name: chip-host-tools_1_5_1_0
-            version: 1.5.1.0
-          - name: chip-host-tools_1_6_0_0
-            version: 1.6.0.0
-          - name: chip-host-tools_1_6_1_0
-            version: 1.6.1.0
+        target:
+          - runner: ubuntu-latest
+            system: x86_64-linux
+          - runner: macos-latest
+            system: aarch64-darwin
+        package: ${{ fromJSON(needs.prepare.outputs.packages) }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
-        uses: cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
         with:
           extra_nix_config: *nix-extra-conf
 
       - name: Restore ccache
         id: ccache-restore
-        uses: actions/cache/restore@v4
+        uses: ./.github/actions/restore-ccache
         with:
-          path: ${{ runner.temp }}/ccache
-          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-${{ hashFiles(format('packages/chip-host-tools/{0}/**', matrix.package.version), 'packages/chip-host-tools/base.nix', 'packages/zap-cli-bin/**/*.nix', 'flake.nix', 'flake.lock') }}
+          directory: ${{ env.CCACHE_DIR }}
+          max-size: ${{ env.CCACHE_MAX_SIZE }}
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-${{ hashFiles(format('packages/chip-sdk/versions/{0}.nix', matrix.package.version), 'packages/chip-sdk/build.nix', 'packages/chip-host-tools/default.nix', 'packages/zap-cli-bin/**/*.nix', 'flake.nix', 'flake.lock') }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-
             ccache-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Set up ccache permissions for restore
-        env:
-          CCACHE_STAGING_DIR: ${{ runner.temp }}/ccache
-        run: |
-          set -euo pipefail
-          sudo mkdir -m0770 -p "$CCACHE_DIR"
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo chown -R --reference=/nix/store "$CCACHE_DIR"
-          else
-            nix shell --inputs-from . nixpkgs#coreutils -c sudo chown -R --reference=/nix/store "$CCACHE_DIR"
-          fi
-          sudo chmod -R 0777 "$CCACHE_DIR"
-          if [ -d "$CCACHE_STAGING_DIR" ]; then
-            sudo cp -a "$CCACHE_STAGING_DIR"/. "$CCACHE_DIR"/
-            sudo chmod -R 0777 "$CCACHE_DIR"
-          fi
-
       - name: Restore caches
         id: nix-cache-restore
-        uses: nix-community/cache-nix-action/restore@v7
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          primary-key: nix-store-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-${{ hashFiles(format('packages/chip-host-tools/{0}/**', matrix.package.version), 'packages/chip-host-tools/base.nix', 'packages/zap-cli-bin/**/*.nix', 'flake.nix', 'flake.lock') }}
+          primary-key: nix-store-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-${{ hashFiles(format('packages/chip-sdk/versions/{0}.nix', matrix.package.version), 'packages/chip-sdk/build.nix', 'packages/chip-host-tools/default.nix', 'packages/zap-cli-bin/**/*.nix', 'flake.nix', 'flake.lock') }}
           restore-prefixes-first-match: |
             nix-store-build-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-
             nix-store-build-${{ runner.os }}-${{ runner.arch }}-
@@ -144,47 +127,24 @@ jobs:
           set -euo pipefail
           sudo --preserve-env=CCACHE_DIR "$(command -v ccache)" -z
 
-      - name: Build and push packages
-        env:
-          NIX_CACHE_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_SECRET_ACCESS_KEY }}
-          NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+      - name: Build package
+        id: package
         run: |
-          set -euo pipefail
-
-          signing_key_file="$RUNNER_TEMP/nix-cache-signing-key"
-          secret_key_file="$RUNNER_TEMP/nix-cache-secret-access-key"
-
-          cleanup() {
-            rm -f "$signing_key_file" "$secret_key_file"
-          }
-          trap cleanup EXIT
-
-          printf '%s' "$NIX_CACHE_SIGNING_KEY" > "$signing_key_file"
-          chmod 600 "$signing_key_file"
-
-          printf '%s' "$NIX_CACHE_SECRET_ACCESS_KEY" > "$secret_key_file"
-          chmod 600 "$secret_key_file"
-
-          nix profile add github:Sped0n/nix-cache-push
-
-          nix-cache-push config set endpoint nix-cache.sped0n.com
-          nix-cache-push config set bucket nix-cache
-          nix-cache-push config set region us-east-1
-          nix-cache-push config set accessKeyId writer
-          nix-cache-push config set signingKeyPath "$signing_key_file"
-          nix-cache-push config set secretKeyPath "$secret_key_file"
-
-          echo "::group::Build ${{ matrix.package.name }}"
           paths="$({
             nix build -L --print-out-paths --cores 2 --max-jobs 1 --option extra-sandbox-paths "$CCACHE_DIR" \
               ".#packages.${{ matrix.target.system }}.${{ matrix.package.name }}"
           } | sort -u)"
           printf '%s\n' "$paths"
-          echo "::endgroup::"
+          printf 'paths<<EOF\n%s\nEOF\n' "$paths" >> "$GITHUB_OUTPUT"
 
-          echo "::group::Push ${{ matrix.package.name }}"
-          printf '%s\n' "$paths" | nix-cache-push
-          echo "::endgroup::"
+      - name: Publish package to Nix cache
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+        uses: ./.github/actions/push-nix-cache
+        with:
+          paths: ${{ steps.package.outputs.paths }}
+        env:
+          NIX_CACHE_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_SECRET_ACCESS_KEY }}
+          NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
 
       - name: Show ccache stats
         if: ${{ always() }}
@@ -194,31 +154,12 @@ jobs:
           sudo --preserve-env=CCACHE_DIR "$(command -v ccache)" -c
           sudo --preserve-env=CCACHE_DIR "$(command -v ccache)" -svv
 
-      - name: Set up ccache permissions for save
-        if: ${{ always() }}
-        env:
-          CCACHE_STAGING_DIR: ${{ runner.temp }}/ccache
-        run: |
-          set -euo pipefail
-          rm -rf "$CCACHE_STAGING_DIR"
-          mkdir -p "$CCACHE_STAGING_DIR"
-          sudo mkdir -m0770 -p "$CCACHE_DIR"
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo chown -R --reference=/nix/store "$CCACHE_DIR"
-          else
-            nix shell --inputs-from . nixpkgs#coreutils -c sudo chown -R --reference=/nix/store "$CCACHE_DIR"
-          fi
-          sudo cp -a "$CCACHE_DIR"/. "$CCACHE_STAGING_DIR"/
-          sudo rm -rf "$CCACHE_STAGING_DIR"/tmp "$CCACHE_STAGING_DIR"/lock
-          sudo chown -R "$USER":"$(id -gn)" "$CCACHE_STAGING_DIR"
-          chmod -R u+rwX,go-rwx "$CCACHE_STAGING_DIR"
-
       - name: Save ccache
         if: ${{ always() && steps.ccache-restore.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
+        uses: ./.github/actions/save-ccache
         with:
-          path: ${{ runner.temp }}/ccache
-          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.package.name }}-${{ hashFiles(format('packages/chip-host-tools/{0}/**', matrix.package.version), 'packages/chip-host-tools/base.nix', 'packages/zap-cli-bin/**/*.nix', 'flake.nix', 'flake.lock') }}
+          directory: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
       - name: Remove ccache before Nix cache save
         if: ${{ always() && steps.nix-cache-restore.outputs.hit-primary-key != 'true' }}
@@ -226,7 +167,7 @@ jobs:
 
       - name: Save caches
         if: ${{ always() && steps.nix-cache-restore.outputs.hit-primary-key != 'true' }}
-        uses: nix-community/cache-nix-action/save@v7
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: ${{ steps.nix-cache-restore.outputs.primary-key }}
           gc-max-store-size-linux: 4G
@@ -236,3 +177,183 @@ jobs:
           purge-created: 0
           purge-last-accessed: P1DT12H
           purge-primary-key: never
+
+  image:
+    needs: prepare
+    name: image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Nix
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            extra-sandbox-paths = /nix/var/cache/ccache
+
+      - name: Restore Nix cache
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-image-${{ runner.arch }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-image-${{ runner.arch }}-
+
+      - name: Restore compiler cache
+        id: ccache-restore
+        uses: ./.github/actions/restore-ccache
+        with:
+          max-size: 2G
+          key: ccache-image-${{ runner.arch }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
+          restore-keys: ccache-image-${{ runner.arch }}-
+
+      - name: Build image and controller
+        id: image
+        run: |
+          nix build -L .#docker-image --out-link image --cores 4 --max-jobs 1
+          nix build -L .#chip-host-tools --out-link host-tools --cores 4 --max-jobs 1
+          image_name=$(nix eval --raw .#docker-image.imageName)
+          image_tag=$(nix eval --raw .#docker-image.imageTag)
+          echo "name=$image_name" >> "$GITHUB_OUTPUT"
+          echo "tag=$image_tag" >> "$GITHUB_OUTPUT"
+          docker load -i image
+          archive_size=$(stat -Lc %s image)
+          unpacked_size=$(docker image inspect "$image_name:$image_tag" --format '{{.Size}}')
+          {
+            echo "### Image size (${{ matrix.arch }})"
+            echo "- Gzip archive: $(numfmt --to=iec-i --suffix=B "$archive_size")"
+            echo "- Unpacked layers: $(numfmt --to=iec-i --suffix=B "$unpacked_size")"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare controller discovery and IPv6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends avahi-daemon
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=0 net.ipv6.conf.default.disable_ipv6=0
+          sudo systemctl start avahi-daemon
+
+      - name: Check runtime, commissioning, and persistence
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.tag }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(docker image inspect "$IMAGE" --format '{{.Architecture}}')" = "$EXPECTED_ARCH"
+          export CHIP_TOOL="$PWD/host-tools/bin/chip-tool"
+          export CHIP_SOURCE
+          CHIP_SOURCE=$(nix eval --raw .#chip-host-tools.src.outPath)
+          bash .github/workflows/check-image.sh "$IMAGE"
+
+      - name: Collect example cache paths
+        id: example-cache
+        if: matrix.arch == 'amd64' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+        run: |
+          package_names=$(nix eval --json --file packages/chip-examples/apps.nix \
+            --apply 'apps: builtins.attrNames apps ++ [ "chip-examples" ]' | jq -r '.[]')
+          installables=()
+          while IFS= read -r package; do
+            installables+=(".#packages.x86_64-linux.$package")
+          done <<< "$package_names"
+          paths=$(nix build --no-link --print-out-paths "${installables[@]}" | sort -u)
+          printf 'paths<<EOF\n%s\nEOF\n' "$paths" >> "$GITHUB_OUTPUT"
+
+      - name: Publish examples to Nix cache
+        if: matrix.arch == 'amd64' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+        uses: ./.github/actions/push-nix-cache
+        with:
+          paths: ${{ steps.example-cache.outputs.paths }}
+        env:
+          NIX_CACHE_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_SECRET_ACCESS_KEY }}
+          NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+
+      - name: Prepare checked image artifact
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          cp -L image image.tar.gz
+          printf '%s\n' "$IMAGE_TAG" > tag.txt
+
+      - name: Upload checked image
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: |
+            image.tar.gz
+            tag.txt
+          compression-level: 0
+          retention-days: 1
+
+      - name: Save compiler cache
+        if: success() && steps.ccache-restore.outputs.cache-hit != 'true'
+        uses: ./.github/actions/save-ccache
+        with:
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+
+      - name: Save Nix cache
+        if: always()
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-image-${{ runner.arch }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
+          gc-max-store-size-linux: 6G
+          purge: true
+          purge-prefixes: nix-image-${{ runner.arch }}-
+          purge-created: 0
+          purge-last-accessed: P1DT12H
+          purge-primary-key: never
+
+  publish-image:
+    needs: image
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download checked images
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: image-*
+          path: images
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          version: v0.38.1
+          driver: docker
+
+      - name: Publish checked images and multi-platform tags
+        run: |
+          image=ghcr.io/sped0n/chipmunk
+          tag=$(<images/image-amd64/tag.txt)
+          test "$tag" = "$(<images/image-arm64/tag.txt)"
+          digests=()
+          for arch in amd64 arm64; do
+            docker load -i "images/image-$arch/image.tar.gz"
+            test "$(docker image inspect "$image:$tag" --format '{{.Architecture}}')" = "$arch"
+            target="$image:$tag-$arch"
+            docker tag "$image:$tag" "$target"
+            docker push "$target"
+            digests+=("$(docker image inspect "$target" --format '{{index .RepoDigests 0}}')")
+          done
+          docker buildx imagetools create \
+            --tag "$image:$tag" \
+            --tag "$image:latest" \
+            "${digests[@]}"

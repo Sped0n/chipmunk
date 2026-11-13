@@ -1,0 +1,43 @@
+name: Push Nix cache
+description: Sign and publish store paths to the chipmunk binary cache.
+
+inputs:
+  paths:
+    description: Newline-separated Nix store paths to publish.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Sign and publish store paths
+      shell: bash
+      env:
+        PACKAGE_PATHS: ${{ inputs.paths }}
+      run: |
+        set -euo pipefail
+        : "${NIX_CACHE_SECRET_ACCESS_KEY:?Missing cache access key}"
+        : "${NIX_CACHE_SIGNING_KEY:?Missing cache signing key}"
+        test -n "$PACKAGE_PATHS"
+
+        umask 077
+        credentials_dir=$(mktemp -d "$RUNNER_TEMP/nix-cache-push.XXXXXXXX")
+        cleanup() {
+          rm -rf "$credentials_dir"
+        }
+        trap cleanup EXIT
+
+        signing_key_file="$credentials_dir/signing-key"
+        secret_key_file="$credentials_dir/secret-access-key"
+        printf '%s' "$NIX_CACHE_SIGNING_KEY" > "$signing_key_file"
+        printf '%s' "$NIX_CACHE_SECRET_ACCESS_KEY" > "$secret_key_file"
+
+        nix profile add github:Sped0n/nix-cache-push
+
+        nix-cache-push config set endpoint nix-cache.sped0n.com
+        nix-cache-push config set bucket nix-cache
+        nix-cache-push config set region us-east-1
+        nix-cache-push config set accessKeyId writer
+        nix-cache-push config set signingKeyPath "$signing_key_file"
+        nix-cache-push config set secretKeyPath "$secret_key_file"
+
+        printf '%s\n' "$PACKAGE_PATHS" | nix-cache-push

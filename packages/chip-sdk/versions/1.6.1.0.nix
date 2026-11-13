@@ -1,25 +1,27 @@
+{ fetchFromGitHub }:
 {
-  callPackage,
-  fetchFromGitHub,
-  zapCliBin,
-}:
-callPackage ../base.nix {
-  inherit zapCliBin;
 
-  version = "1.6.0.0";
+  version = "1.6.1.0";
 
   src = fetchFromGitHub {
     owner = "project-chip";
     repo = "connectedhomeip";
-    rev = "v1.6.0.0";
-    hash = "sha256-ZdieqVuDOCFRPfd8BCZ4YCOy6hdi0Qn++/2aOnig5vI=";
+    rev = "3bcdd56ba54fb88b2afb4bfef575014671df7aa7"; # v1.6.1.0
+    hash = "sha256-R7NjfWTAHTVWLTkhs089AAU5WQse4XqtDt+NTDO56bU=";
   };
 
   openthreadSrc = fetchFromGitHub {
     owner = "openthread";
     repo = "openthread";
-    rev = "1b805618025e406f85227187e3f2bc0b73fa17bd";
-    hash = "sha256-idghNQhsVI5OXiasQtWWx9TpyEDMXF2qHxSVw82nLTE=";
+    rev = "8bb5b30b2bd7c3e17101cfe9837d4ddf486502c3";
+    hash = "sha256-Cf9gSLwygE13jkXvY+IE4QHE7rOoRpse+5Xkfa7az4U=";
+  };
+
+  additionalSubmoduleSources.miniaudio = {
+    path = "third_party/miniaudio/repo";
+    url = "https://github.com/mackron/miniaudio.git";
+    rev = "9634bedb5b5a2ca38c1ee7108a9358a4e233f14d";
+    hash = "sha256-2k346Z/ueINPbaY20P2cbBvRfFXXH0ugdv4d7WaYt2w=";
   };
 
   fetchedSubmoduleSources = [
@@ -38,8 +40,8 @@ callPackage ../base.nix {
     {
       path = "third_party/pigweed/repo";
       url = "https://github.com/google/pigweed.git";
-      rev = "c9687b52fa704606d19952255c78142fdb2a131a";
-      hash = "sha256-xh99ka7gIHTTiOhSdZ6r3A38TtNLCACUPZ3x5RFJC+s=";
+      rev = "8bc35d07baf8000f8db57674a23c5e06f7516d79";
+      hash = "sha256-MgS6iinARHSJhzsLJ7pDxeANo16sRHiUz0UoO+4cTm4=";
     }
     {
       path = "third_party/perfetto/repo";
@@ -50,8 +52,8 @@ callPackage ../base.nix {
     {
       path = "third_party/lwip/repo";
       url = "https://github.com/lwip-tcpip/lwip.git";
-      rev = "8e75a40acfea6b05ee643099e41f3b2e11ee464d";
-      hash = "sha256-On2gfxjcSSrn+a42L/+6RvdBUm0Uz2yMnYiV6177ME4=";
+      rev = "3d896ba0a37ff3ce73270ca5e230707fe47f60e3";
+      hash = "sha256-UDz+ptI/ssKb2HwmM3aE1XWtYcaGF/JmnVqnpa9CI38=";
     }
     {
       path = "third_party/libwebsockets/repo";
@@ -62,8 +64,8 @@ callPackage ../base.nix {
     {
       path = "third_party/editline/repo";
       url = "https://github.com/troglobit/editline.git";
-      rev = "2e0504d31e6878208036a4dd91f44841dabb1ee7";
-      hash = "sha256-C6zC51e8prIR9Rqf+hnYctAuZhgg5vCKD9xAMpquw4w=";
+      rev = "79c39d2756d02db6887b4669c45cce0eae05f9c8";
+      hash = "sha256-elREUDoHseXQzq0vXw6scz+FbyIgrt8BOrL1Qk5wOfE=";
     }
     {
       path = "third_party/nanopb/repo";
@@ -74,8 +76,8 @@ callPackage ../base.nix {
     {
       path = "third_party/jsoncpp/repo";
       url = "https://github.com/open-source-parsers/jsoncpp.git";
-      rev = "3455302847cf1e4671f1d8f5fa953fd46a7b1404";
-      hash = "sha256-rf8d2UNTVEZhuiyChK2XnUbfGDvsfXnKADhaSp8qBwQ=";
+      rev = "8519b8381f3c741ad1421f88237b1deda0b11412";
+      hash = "sha256-5cH9G4/TVCM5HX6QSk3P4m5+cwuK4x8hP9FohBcmjik=";
     }
     {
       path = "third_party/ot-commissioner/repo";

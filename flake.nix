@@ -1,17 +1,27 @@
 {
-  description = "CHIP host tools and ZAP CLI";
+  description = "chipmunk: Matter host tools, Linux example apps, and ZAP CLI";
 
   inputs.nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
+      # Newest first: the first version drives both default host tools and the image.
+      chipVersions = [
+        "1.6.1.0"
+        "1.6.0.0"
+        "1.5.1.0"
+        "1.5.0.1"
+      ];
+      defaultChipVersion = builtins.head chipVersions;
+
       systems = [
         "x86_64-linux"
         "aarch64-linux"
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+
       ccacheOverlay = final: prev: {
         ccacheWrapper = prev.ccacheWrapper.override {
           extraConfig = ''
@@ -28,8 +38,7 @@
           '';
         };
       };
-    in
-    let
+
       perSystem = forAllSystems (
         system:
         let
@@ -38,49 +47,90 @@
             config.allowUnfree = true;
             overlays = [ ccacheOverlay ];
           };
+
           zapCliBin = pkgs.callPackage ./packages/zap-cli-bin { };
-          chipHostTools_1_5_0_1 = pkgs.callPackage ./packages/chip-host-tools/1.5.0.1 {
-            inherit zapCliBin;
+
+          sdkByVersion = pkgs.lib.genAttrs chipVersions (
+            version: pkgs.callPackage (./packages/chip-sdk/versions + "/${version}.nix") { }
+          );
+          defaultSdk = sdkByVersion.${defaultChipVersion};
+
+          buildChip = args: pkgs.callPackage ./packages/chip-sdk/build.nix (args // { inherit zapCliBin; });
+
+          hostToolsByVersion = pkgs.lib.genAttrs chipVersions (
+            version:
+            pkgs.callPackage ./packages/chip-host-tools {
+              inherit buildChip;
+              sdk = sdkByVersion.${version};
+            }
+          );
+          hostTools = hostToolsByVersion.${defaultChipVersion};
+          versionedPackages = pkgs.lib.mapAttrs' (
+            version: package:
+            pkgs.lib.nameValuePair "chip-host-tools_${builtins.replaceStrings [ "." ] [ "_" ] version}" package
+          ) hostToolsByVersion;
+
+          exampleDefinitions = import ./packages/chip-examples/apps.nix;
+          examplePackages = pkgs.lib.mapAttrs (
+            _: app:
+            pkgs.callPackage ./packages/chip-examples {
+              inherit buildChip app;
+              sdk = defaultSdk;
+            }
+          ) exampleDefinitions;
+
+          chipExamples = pkgs.callPackage ./packages/chip-examples/bundle.nix {
+            inherit examplePackages;
+            inherit (defaultSdk) src version;
           };
-          chipHostTools_1_5_1_0 = pkgs.callPackage ./packages/chip-host-tools/1.5.1.0 {
-            inherit zapCliBin;
-          };
-          chipHostTools_1_6_0_0 = pkgs.callPackage ./packages/chip-host-tools/1.6.0.0 {
-            inherit zapCliBin;
-          };
-          chipHostTools_1_6_1_0 = pkgs.callPackage ./packages/chip-host-tools/1.6.1.0 {
-            inherit zapCliBin;
-          };
-          packages = {
-            zap-cli-bin = zapCliBin;
-            chip-host-tools_1_5_0_1 = chipHostTools_1_5_0_1;
-            chip-host-tools_1_5_1_0 = chipHostTools_1_5_1_0;
-            chip-host-tools_1_6_0_0 = chipHostTools_1_6_0_0;
-            chip-host-tools_1_6_1_0 = chipHostTools_1_6_1_0;
-            chip-host-tools = chipHostTools_1_6_1_0;
-            default = chipHostTools_1_6_1_0;
-          };
-          mkPackageShell =
-            package:
-            pkgs.mkShell {
-              packages = [ package ];
-            };
+
+          packages =
+            versionedPackages
+            // {
+              zap-cli-bin = zapCliBin;
+              chip-host-tools = hostTools;
+              default = hostTools;
+            }
+            // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+              examplePackages
+              // {
+                chip-examples = chipExamples;
+
+                docker-image = pkgs.callPackage ./packages/chip-examples/image.nix {
+                  inherit chipExamples;
+                  chipVersion = defaultChipVersion;
+                  chipRevision = defaultSdk.src.rev;
+                  revision = self.rev or (self.dirtyRev or "unknown");
+                  shortRevision = if self ? rev then builtins.substring 0 12 self.rev else "dirty";
+                };
+              }
+            );
         in
         {
           inherit packages;
-          devShells = {
-            zap-cli-bin = mkPackageShell packages.zap-cli-bin;
-            chip-host-tools_1_5_0_1 = mkPackageShell packages.chip-host-tools_1_5_0_1;
-            chip-host-tools_1_5_1_0 = mkPackageShell packages.chip-host-tools_1_5_1_0;
-            chip-host-tools_1_6_0_0 = mkPackageShell packages.chip-host-tools_1_6_0_0;
-            chip-host-tools_1_6_1_0 = mkPackageShell packages.chip-host-tools_1_6_1_0;
-            chip-host-tools = mkPackageShell packages.chip-host-tools;
-            default = mkPackageShell packages.default;
-          };
+
+          devShells = builtins.mapAttrs (
+            _: package:
+            pkgs.mkShell {
+              packages = [
+                package
+              ]
+              ++ (with pkgs; [
+                prek
+
+                actionlint
+                nixfmt
+              ]);
+            }
+          ) (removeAttrs packages [ "docker-image" ]);
         }
       );
     in
     {
+      lib = {
+        inherit chipVersions defaultChipVersion;
+      };
+
       packages = forAllSystems (system: perSystem.${system}.packages);
       devShells = forAllSystems (system: perSystem.${system}.devShells);
     };

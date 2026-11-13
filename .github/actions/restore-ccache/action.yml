@@ -1,0 +1,59 @@
+name: Restore ccache
+description: Restore the compiler cache and make it writable by Nix builders.
+
+inputs:
+  key:
+    description: Cache key for this build.
+    required: true
+  restore-keys:
+    description: Fallback cache key prefixes, one per line.
+    default: ""
+  max-size:
+    description: Compiler cache size limit, such as 200M or 2G.
+    required: true
+  directory:
+    description: Compiler cache directory shared with Nix builds.
+    default: /nix/var/cache/ccache
+
+outputs:
+  cache-hit:
+    description: Whether the primary cache key matched.
+    value: ${{ steps.cache.outputs.cache-hit }}
+  cache-primary-key:
+    description: Primary key to use when saving the cache.
+    value: ${{ steps.cache.outputs.cache-primary-key }}
+
+runs:
+  using: composite
+  steps:
+    - name: Restore compiler cache snapshot
+      id: cache
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+
+    - name: Prepare writable compiler cache
+      shell: bash
+      env:
+        CCACHE_DIR: ${{ inputs.directory }}
+        CCACHE_STAGING_DIR: ${{ runner.temp }}/ccache
+        CCACHE_MAX_SIZE: ${{ inputs.max-size }}
+      run: |
+        set -euo pipefail
+
+        sudo mkdir -m0770 -p "$CCACHE_DIR"
+        if [ "$RUNNER_OS" = Linux ]; then
+          sudo chown -R --reference=/nix/store "$CCACHE_DIR"
+        else
+          nix shell --inputs-from . nixpkgs#coreutils -c sudo chown -R --reference=/nix/store "$CCACHE_DIR"
+        fi
+        sudo chmod -R 0777 "$CCACHE_DIR"
+
+        if [ -d "$CCACHE_STAGING_DIR" ]; then
+          sudo cp -a "$CCACHE_STAGING_DIR"/. "$CCACHE_DIR"/
+          sudo chmod -R 0777 "$CCACHE_DIR"
+        fi
+
+        printf 'max_size = %s\n' "$CCACHE_MAX_SIZE" | sudo tee "$CCACHE_DIR/ccache.conf" >/dev/null

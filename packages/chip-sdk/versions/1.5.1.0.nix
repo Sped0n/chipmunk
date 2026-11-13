@@ -1,10 +1,5 @@
+{ fetchFromGitHub }:
 {
-  callPackage,
-  fetchFromGitHub,
-  zapCliBin,
-}:
-callPackage ../base.nix {
-  inherit zapCliBin;
 
   version = "1.5.1.0";
 
